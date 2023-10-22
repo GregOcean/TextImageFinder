@@ -26,6 +26,7 @@
                 android:layout_height="match_parent"/>
 
         <com.google.android.material.button.MaterialButton
+                android:id="@+id/recognizedTextBtn"
                 android:text="Recognize Text"
                 android:layout_marginStart="5dp"
                 app:cornerRadius="5dp"
