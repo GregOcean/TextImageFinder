@@ -2,6 +2,7 @@ package com.example.textimagefinder;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.ProgressDialog;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
@@ -10,6 +11,7 @@ import android.graphics.Bitmap;
 import android.net.Uri;
 import android.provider.MediaStore;
 import android.telephony.emergency.EmergencyNumber;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -23,8 +25,21 @@ import androidx.appcompat.app.AppCompatActivity;
 import android.os.Bundle;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.imageview.ShapeableImageView;
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.text.Text;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.TextRecognizerOptionsInterface;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
+
+
+import java.io.IOException;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -43,6 +58,11 @@ public class MainActivity extends AppCompatActivity {
     private String[] cameraPermissions;
     private String[] storagePermissions;
 
+
+    private ProgressDialog progressDialog;
+
+    private TextRecognizer textRecognizer;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -56,6 +76,13 @@ public class MainActivity extends AppCompatActivity {
         cameraPermissions = new String[]{Manifest.permission.CAMERA,Manifest.permission.WRITE_EXTERNAL_STORAGE};
         storagePermissions = new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE};
 
+        progressDialog = new ProgressDialog(this);
+        progressDialog.setTitle("Please wait");
+        progressDialog.setCanceledOnTouchOutside(false);
+
+        //textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        textRecognizer = TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
+
         inputImageBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -63,6 +90,52 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        recognizedTextBtn.setOnClickListener(new View.OnClickListener(){
+            @Override
+            public void onClick(View view){
+                if (imageUri == null){
+                    Toast.makeText(MainActivity.this, "Pick image first...", Toast.LENGTH_SHORT).show();
+                } else{
+                    recognizeTextFromImage();
+                }
+            }
+        });
+
+    }
+
+    private void recognizeTextFromImage() {
+        Log.d(TAG, "recognizeTextFromImage: ");
+        progressDialog.setMessage("Preparing image...");
+        progressDialog.show();
+
+        try {
+            InputImage inputImage = InputImage.fromFilePath(this, imageUri);
+            progressDialog.setMessage("Recognizing Text...");
+            Task<Text> textTaskResult = textRecognizer.process(inputImage).addOnSuccessListener(
+                    new OnSuccessListener<Text>() {
+                        @Override
+                        public void onSuccess(Text text) {
+                            progressDialog.dismiss();
+                            String recognizedText = text.getText();
+                            Log.d(TAG, "onSuccess: recognizedText:" + recognizedText);
+                            recognizedEt.setText(recognizedText);
+
+                        }
+                    }
+            ).addOnFailureListener(new OnFailureListener() {
+                @Override
+                public void onFailure(@NonNull Exception e) {
+                    progressDialog.dismiss();
+                    Log.e(TAG,"onFailure:", e);
+                    Toast.makeText(MainActivity.this, ""+e.getMessage(), Toast.LENGTH_SHORT).show();
+
+                }
+            });
+        } catch (IOException e) {
+            progressDialog.dismiss();
+            Log.e(TAG, "recogizaTextFromImage: ", e);
+            Toast.makeText(this, "FAILED recognizing text due to " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showInputImageDialog(){
@@ -77,25 +150,28 @@ public class MainActivity extends AppCompatActivity {
             public boolean onMenuItemClick(MenuItem menuItem) {
                 int id = menuItem.getItemId();
                 if (id == 1){
+                    Log.d(TAG, "onMenuItemClick: Camera Clicked ...");
                     if(checkCameraPermissions()){
                         pickImageCamera();
                     } else{
                         requestCameraPermissions();
                     }
                 } else if (id == 2){
+                    Log.d(TAG, "onMenuItemClick: Gallery Clicked...");
                     if(checkStoragePermission()){
                         pickImageGallery();
                     }else {
                         requestStoragePermission();
                     }
                 }
-                return false;
+                return true;
             }
         });
 
     }
 
     private void pickImageGallery(){
+        Log.d(TAG, "pickImageGallery: ");
         Intent intent = new Intent(Intent.ACTION_PICK);
         intent.setType("image/*");
         galleryActivityResultLauncher.launch(intent);
@@ -109,7 +185,9 @@ public class MainActivity extends AppCompatActivity {
                     if(result.getResultCode() == Activity.RESULT_OK) {
                         //image picked
                         Intent data = result.getData();
-                        imageUri = result.getData().getData();
+                        assert data != null;
+                        imageUri = data.getData();
+                        Log.d(TAG, "onActivityResult: imageUri: " + imageUri);
                         imageIv.setImageURI(imageUri);
                     }else{
                         Toast.makeText(MainActivity.this, "Cancelled...", Toast.LENGTH_SHORT).show();
@@ -120,6 +198,7 @@ public class MainActivity extends AppCompatActivity {
 
 
     private void pickImageCamera(){
+        Log.d(TAG, "pickImageCamera: ");
         ContentValues values = new ContentValues();
         values.put(MediaStore.Images.Media.TITLE, "Sample Title");
         values.put(MediaStore.Images.Media.DESCRIPTION, "Sample Description");
@@ -135,8 +214,10 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onActivityResult(ActivityResult result) {
                     if (result.getResultCode() == Activity.RESULT_OK) {
+                        Log.d(TAG, "onActivityResult: imageUri" + imageUri);
                         imageIv.setImageURI(imageUri);
                     } else{
+                        Log.d(TAG, "onActivityResult: Cancelled");
                         Toast.makeText(MainActivity.this, "Cancelled", Toast.LENGTH_SHORT).show();
                     }
                 }
@@ -181,6 +262,7 @@ public class MainActivity extends AppCompatActivity {
 
                 }
             }
+            break;
             case STORAGE_REQUEST_CODE:{
                 if (grantResults.length > 0){
                     boolean storageAccepted = grantResults[0] == PackageManager.PERMISSION_GRANTED;
@@ -192,6 +274,7 @@ public class MainActivity extends AppCompatActivity {
                 }
 
             }
+            break;
         }
     }
 }
